@@ -3,8 +3,9 @@ import * as Discord from "discord.js";
 
 import {DISCORD_BOT_TOKEN, MARATHON_SLUG, DISCORD_BOT_ID, SUBMISSION_CHANNEL, DISCORD_GUILD} from "./config";
 
-const seen_category_ids = [];
 const OENGUS_URL = `https://oengus.io/api/marathon/${MARATHON_SLUG}/game`;
+const SUBMITTED_URL = `https://oengus.io/marathon/${MARATHON_SLUG}/submissions`;
+const FOOTER_ID_REGEX = /ID: ([0-9]+)/;
 
 interface Category {
     id: number,
@@ -33,32 +34,23 @@ interface GameSubmission {
     user: User,
 }
 
+interface GameCategoryCombined {
+    gameName: string,
+    categoryName: string,
+    userName: string,
+    consoleName: string,
+    gameDesc: string,
+    catDesc: string,
+    catId: number,
+}
+
 async function main() {
-    const submissions = await getSubmissions();
-    // get all category ids and save them
-    submissions.forEach(submission => {
-        submission.categories.forEach(cat => {
-            seen_category_ids.push(cat.id);
-        });
-    });
-    console.log(seen_category_ids);
-    const discordClient = await loginBot();
-    //const poggersEmoji = discordClient.guilds.get(DISCORD_GUILD).emojis.find(emoji => emoji.name == "Magoo");
-    const channel = discordClient.channels.get(SUBMISSION_CHANNEL) as Discord.TextChannel;
-    if (!channel) {
-        throw new Error("channel doesn't exist!");
-    }
-    await formatSendSubmission(channel, "The Legend of Zelda: Skyward Sword", "Double Anti-Bingo", "Floha258", "Wii");
-    channel.messages.forEach(message => {
-        console.log(message);
-        if (message.author.id == DISCORD_BOT_ID && message.embeds.length == 1) {
-            const footer = message.embeds[0].footer;
-            if (footer) {
-                console.log(footer.text);
-            }
-        } 
-    });
-    await discordClient.destroy();
+    await announceNotAlreadyPostedSubmissions();
+    // look every 30 mins
+    setInterval(() => {
+        announceNotAlreadyPostedSubmissions();
+    }, 30 * 60 * 1000);
+
 }
 
 async function getSubmissions(): Promise<GameSubmission[]> {
@@ -87,14 +79,67 @@ async function loginBot(): Promise<Discord.Client> {
     });
 }
 
-function formatSendSubmission(channel: Discord.TextChannel, game: string, category: string, runner: string, platform: string): Promise<any> {
-    return channel.send(`${runner} submitted a new run!`, {
+async function formatSendSubmission(channel: Discord.TextChannel, info: GameCategoryCombined): Promise<any> {
+    return channel.send({
         embed: {
+            title: `${info.userName} submitted a new run!`,
+            url: SUBMITTED_URL,
             color: 0x5c88bc,
-            description: `**Game**: ${game}\n**Category**: ${category}\n**Platform**: ${platform}`,
-            footer: {text:`ID: 123`},
+            description: `**Game**: ${info.gameName}\n**Category**: ${info.categoryName}\n**Platform**: ${info.consoleName}\n**Game Description**: ${info.gameDesc}\n**Category Description**: ${info.catDesc}`,
+            footer: {text: `ID: ${info.catId}`},
         }
     });
+}
+
+async function getAlreadyAnnouncedCategoryIDs(channel: Discord.TextChannel): Promise<number[]> {
+    let categoryIDs: number[] = [];
+    let fetched = await channel.fetchMessages({limit: 100});
+    while (fetched.size > 0) {
+        fetched.forEach(message => {
+            if (message.author.id == DISCORD_BOT_ID && message.embeds.length == 1) {
+                const footer = message.embeds[0].footer;
+                if (footer) {
+                    let match = FOOTER_ID_REGEX.exec(footer.text);
+                    if (match.length == 2) {
+                        categoryIDs.push(parseInt(match[1]));
+                    }
+                }
+            } 
+        });
+        fetched = await channel.fetchMessages({limit: 100, before: fetched.last().id});
+    }
+    return categoryIDs;
+}
+
+async function announceNotAlreadyPostedSubmissions(): Promise<void> {
+    const discordClient = await loginBot();
+    //const poggersEmoji = discordClient.guilds.get(DISCORD_GUILD).emojis.find(emoji => emoji.name == "Magoo");
+    const channel = discordClient.channels.get(SUBMISSION_CHANNEL) as Discord.TextChannel;
+    if (!channel) {
+        throw new Error("channel doesn't exist!");
+    }
+    let [submissions, announcedCategoryIDs] = await Promise.all([getSubmissions(), getAlreadyAnnouncedCategoryIDs(channel)]);
+    let unannounced: GameCategoryCombined[] = [];
+    submissions.forEach(submission => {
+        submission.categories.forEach(category => {
+            if (!announcedCategoryIDs.includes(category.id)) {
+                unannounced.push({
+                    catDesc: category.description,
+                    catId: category.id,
+                    categoryName: category.name,
+                    consoleName: submission.console,
+                    gameDesc: submission.description,
+                    gameName: submission.name,
+                    userName: submission.user.username,
+                });
+            }
+        });
+    });
+    for (let i = 0;i<unannounced.length;i++) {
+        await formatSendSubmission(channel, unannounced[i]);
+    }
+    console.log(`Announced ${unannounced.length} submissions!`);
+    discordClient.destroy();
 }
 
 main();
