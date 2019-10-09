@@ -1,0 +1,17 @@
+{
+  "name": "oengussubmissionwatch",
+  "version": "0.0.1",
+  "description": "fun",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/request-promise": "^4.1.44",
+    "discord.js": "^11.5.1",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.4"
+  }
+}
