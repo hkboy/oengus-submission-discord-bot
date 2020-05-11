@@ -65,3 +65,14 @@ dist
 
 # secrets
 src/config.ts
+bsga/config.js
+
+bsga/Config.ts
+
+bsg/config.js
+
+bsg/Config.ts
+
+bsg/index.js
+
+bsga/index.js
